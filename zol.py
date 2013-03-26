@@ -100,6 +100,23 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
             command = ' '.join(cmd)
             return self._run_ssh(command, check_exit_code)
 
+    def create_snapshot(self, snapshot):
+        """Creates a snapshot."""
+	zfs_poolname = self._build_zfs_poolname(snapshot['volume_name'])
+        snap_path = "%s@%s" % (zfs_poolname, snapshot['name'])
+        self._execute(self.ZFSCMD, 'snapshot', snap_path,
+                                    run_as_root=True)
+
+    def delete_snapshot(self, snapshot):
+        """Deletes a snapshot."""
+	zfs_poolname = self._build_zfs_poolname(snapshot['volume_name'])
+        snap_path = "%s@%s" % (zfs_poolname, snapshot['name'])
+        if self._volume_not_present(zfs_poolname):
+            # If the snapshot isn't present, then don't attempt to delete
+            return True
+        self._execute(self.ZFSCMD, 'destroy', snap_path,
+                                    run_as_root=True)
+
     def _create_volume(self, volume_name, sizestr):
         zfs_poolname = self._build_zfs_poolname(volume_name)
 
@@ -112,11 +129,10 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
         self._execute(*cmd, run_as_root=True)
 
     def _volume_not_present(self, volume_name):
-        zfs_poolname = self._build_zfs_poolname(volume_name)
         try:
             out, err = self._execute(self.ZFSCMD, 'list', '-H', 
-                                     zfs_poolname, run_as_root=True)
-            if out.startswith(zfs_poolname):
+                                     volume_name, run_as_root=True)
+            if out.startswith(volume_name):
                 return False
         except Exception as e:
             # If the volume isn't present
