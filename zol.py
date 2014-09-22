@@ -113,7 +113,7 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
 	snap_path  = "%s@%s" % (zfs_poolname, snapshot['name'])
         if self._volume_not_present(snapshot['volume_name']):
             # If the snapshot isn't present, then don't attempt to delete
-	    LOG.debug("NAO ACHEI SNAP %s",(snap_path))
+	    LOG.debug("SNAPSHOT NOT FOUND %s",(snap_path))
             return True
         self._execute(self.ZFSCMD, 'destroy', snap_path,
                                     run_as_root=True)
@@ -155,7 +155,7 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
         """Deletes a volume."""
         if self._volume_not_present(volume['name']):
             # If the volume isn't present, then don't attempt to delete
-	    LOG.debug("NAO ACHEI (%s)" % (volume['name']))
+	    LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
             return True
         zfs_poolname = self._build_zfs_poolname(volume['name'])
         self._execute(self.ZFSCMD, 'destroy', zfs_poolname, run_as_root=True)
