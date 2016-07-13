@@ -27,16 +27,19 @@ My setup is utilizing locally stored ZFS volumes so SSH access was not tested
 """
 
 import os
+import socket
+
+from oslo_config import cfg
+from oslo_utils import importutils
+from oslo_log import log as logging
 
 from cinder import exception
-from cinder import flags
+from cinder import objects
 from cinder import utils
-from cinder.openstack.common import cfg
-from cinder.openstack.common import log as logging
-from cinder.volume import iscsi
-from cinder.volume.driver import _iscsi_location
-from cinder.volume.san import SanISCSIDriver
-
+from cinder.i18n import _, _LE, _LI
+from cinder.volume import driver
+from cinder.volume.targets import iscsi
+from cinder.volume.drivers.san import san
 
 LOG = logging.getLogger(__name__)
 
@@ -46,11 +49,11 @@ san_opts = [
                help='The ZFS command.'),
     ]
 
-FLAGS = flags.FLAGS
-FLAGS.register_opts(san_opts)
+CONF = cfg.CONF
+CONF.register_opts(san_opts)
 
 
-class ZFSonLinuxISCSIDriver(SanISCSIDriver):
+class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
     """Executes commands relating to ZFS-on-Linux-hosted ISCSI volumes.
 
     Basic setup for a ZoL iSCSI server:
@@ -67,7 +70,7 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
 
     Make sure you can login using san_login & san_password/san_private_key
     """
-    ZFSCMD = FLAGS.san_zfs_command
+    ZFSCMD = CONF.san_zfs_command
 
     _local_execute = utils.execute
 
@@ -79,11 +82,31 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
         self._runlocal = v
     run_local = property(_getrl, _setrl)
 
-    def __init__(self):
-        super(ZFSonLinuxISCSIDriver, self).__init__()
-        self.tgtadm.set_execute(self._execute)
-        self.tgtadm = iscsi.get_target_admin()
-        LOG.info("run local = %s (%s)" % (self.run_local, FLAGS.san_is_local))
+    def __init__(self, *args, **kwargs):
+        super(ZFSonLinuxISCSIDriver, self).__init__(*args, **kwargs)
+        self.configuration.append_config_values(san_opts)
+        self.hostname = socket.gethostname()
+        self.backend_name =\
+            self.configuration.safe_get('volume_backend_name') or 'ZOL'
+
+        # Target Driver is what handles data-transport
+        # Transport specific code should NOT be in
+        # the driver (control path), this way
+        # different target drivers can be added (iscsi, FC etc)
+        target_driver = \
+            self.target_mapping[self.configuration.safe_get('iscsi_helper')]
+
+        LOG.debug('Attempting to initialize ZOL driver with the '
+                  'following target_driver: %s',
+                  target_driver)
+
+        self.target_driver = importutils.import_object(
+            target_driver,
+            configuration=self.configuration,
+            db=self.db,
+            executor=self._execute)
+
+        LOG.info("run local = %s (%s)" % (self.run_local, CONF.san_is_local))
 
     def set_execute(self, execute):
         LOG.debug("override local execute cmd with %s (%s)" % (
@@ -123,7 +146,7 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
 
         # Create a zfs volume
         cmd = [self.ZFSCMD, 'create']
-        if FLAGS.san_thin_provision:
+        if CONF.san_thin_provision:
             cmd.append('-s')
         cmd.extend(['-V', sizestr])
         cmd.append(zfs_poolname)
@@ -162,9 +185,9 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
 
     def create_export(self, context, volume):
         """Creates an export for a logical volume."""
-        iscsi_name = "%s%s" % (FLAGS.iscsi_target_prefix, volume['name'])
+        iscsi_name = "%s%s" % (CONF.iscsi_target_prefix, volume['name'])
         # set volume path properly for ZFS
-        volume_path = "/dev/zvol/%s/%s" % (FLAGS.volume_group, volume['name'])
+        volume_path = "/dev/zvol/%s/%s" % (CONF.volume_group, volume['name'])
         model_update = {}
 
         # TODO(jdg): In the future move all of the dependent stuff into the
@@ -186,7 +209,7 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
                                               0,
                                               volume_path)
         model_update['provider_location'] = _iscsi_location(
-            FLAGS.iscsi_ip_address, tid, iscsi_name, lun)
+            CONF.iscsi_ip_address, tid, iscsi_name, lun)
         return model_update
 
     def remove_export(self, context, volume):
@@ -226,9 +249,9 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
     def check_for_export(self, context, volume_id):
         """Make sure volume is exported."""
         vol_uuid_file = 'volume-%s' % volume_id
-        volume_path = os.path.join(FLAGS.volumes_dir, vol_uuid_file)
+        volume_path = os.path.join(CONF.volumes_dir, vol_uuid_file)
         if os.path.isfile(volume_path):
-            iqn = '%s%s' % (FLAGS.iscsi_target_prefix,
+            iqn = '%s%s' % (CONF.iscsi_target_prefix,
                             vol_uuid_file)
         else:
             raise exception.PersistentVolumeFileNotFound(volume_id=volume_id)
@@ -256,5 +279,5 @@ class ZFSonLinuxISCSIDriver(SanISCSIDriver):
         return zvoldev
 
     def _build_zfs_poolname(self, volume_name):
-        zfs_poolname = '%s%s' % (FLAGS.san_zfs_volume_base, volume_name)
+        zfs_poolname = '%s%s' % (CONF.san_zfs_volume_base, volume_name)
         return zfs_poolname
