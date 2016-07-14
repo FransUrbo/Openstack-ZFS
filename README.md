@@ -27,27 +27,33 @@ Based off of work from David Douard in the following blog post. http://www.logil
 
 To install copy zol.py to /usr/lib/python2.7/dist-packages/cinder/volume/drivers and add the following to /etc/cinder/cinder.conf
 
-  \# ZFS/ZoL driver - https://github.com/FransUrbo/Openstack-ZFS  
-  [zol]
-  volume\_driver = cinder.volume.drivers.zol.ZFSonLinuxISCSIDriver  
-  volume\_group = \<zvol\_path\>  
-  iscsi\_ip\_prefix = \<ip\_prefix\>  
-  iscsi\_ip\_address = \<cinder\_ip\>  
-  san\_thin\_provision = \<true|false\>  
-  san\_ip = $my_ip
-  san\_zfs\_volume\_base = \<zvol\_path\>  
-  san\_is\_local = \<true|false\>  
-  use\_cow\_images = \<true|false\>  
-  san_login = \<san_admin_user\>  
-  san_private_key = \<ssh_key_path\>  
-  san_zfs_command = \<path_to_zfs_or_wrapper_on_san\>  
-  verbose = true  
+```
+# ZFS/ZoL driver - https://github.com/FransUrbo/Openstack-ZFS  
+[zol]
+volume_driver = cinder.volume.drivers.zol.ZFSonLinuxISCSIDriver  
+volume_group = <zvol_path>  
+iscsi_ip_prefix = <ip_prefix>  
+iscsi_ip_address = <cinder_ip>  
+san_thin_provision = <true|false>  
+san_ip = $my_ip
+san_zfs_volume_base = <zvol_path>  
+san_is_local = <true|false>  
+use_cow_images = <true|false>  
+san_login = <san_admin_user>  
+san_private_key = <ssh_key_path>  
+san_zfs_command = <path_to_zfs_or_wrapper_on_san>  
+verbose = true  
+```
 
 /etc/cinder/rootwrap.d/volume.filters needs the following line added as well  
 
-  zfs: CommandFilter, /sbin/zfs, root  
+```
+zfs: CommandFilter, /sbin/zfs, root  
+```
 
 You will also need to create a volume type for this
 
-  openstack volume type create --description "ZFS volumes" --public zfs  
-  openstack volume type set --property volume_backend_name=ZOL zfs  
+```
+openstack volume type create --description "ZFS volumes" --public zfs  
+openstack volume type set --property volume_backend_name=ZOL zfs  
+```
