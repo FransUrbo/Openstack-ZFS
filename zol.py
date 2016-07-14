@@ -90,11 +90,15 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     def _getrl(self):
         return self._runlocal
+    
     def _setrl(self, v):
         if isinstance(v, basestring):
             v = v.lower() in ('true', 't', '1', 'y', 'yes')
         self._runlocal = v
     run_local = property(_getrl, _setrl)
+
+    def _sizestr(self, size_in_g):
+        return '%sG' % size_in_g
 
     def __init__(self, *args, **kwargs):
         super(ZFSonLinuxISCSIDriver, self).__init__(*args, **kwargs)
@@ -170,7 +174,11 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             cmd.append('-s')
         cmd.extend(['-V', sizestr])
         cmd.append(zfs_poolname)
+        LOG.debug('About to run command: "%s"', *cmd)
         self._execute(*cmd, run_as_root=True)
+
+    def create_volume(self, volume):
+        self._create_volume(volume['name'], self._sizestr(volume['size']))
 
     def _update_volume_stats(self):
         """Retrieve stats info from volume group."""
@@ -397,6 +405,6 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         return zvoldev
 
     def _build_zfs_poolname(self, volume_name):
-        zfs_poolname = '%s%s' % (self.configuration.san_zfs_volume_base,
+        zfs_poolname = '%s/%s' % (self.configuration.san_zfs_volume_base,
                                  volume_name)
         return zfs_poolname
