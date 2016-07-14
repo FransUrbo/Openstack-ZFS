@@ -3,9 +3,27 @@ Openstack-ZFS
 
 zfs plugin for Cinder in Openstack Mitaka.
 
+This version _require_ that ZoL have been compiled with my
+'shareiscsi' patch - https://github.com/zfsonlinux/zfs/pull/1099.
+
+This pull request is closed, because "the powers that be" have
+had no interest in it. If enough people keep asking them for it,
+it will maybe (!!) happen.
+
+Untill then (or until 'they' write this support into ZED which,
+to be fair, is a much better idea), I try to keep my own branch
+as up to date as I can. HOWEVER (!!) I only push to that when
+I upgrade myself, which isn't that often..
+
+  https://github.com/fransurbo/zfs/tree/iscsi
+
+# History
+
 Based off of work by tparker00. https://github.com/tparker00/Openstack-ZFS
 
 Based off of work from David Douard in the following blog post. http://www.logilab.org/blogentry/114769
+
+# Install
 
 To install copy zol.py to /usr/lib/python2.7/dist-packages/cinder/volume/drivers and add the following to /etc/cinder/cinder.conf
 

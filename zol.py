@@ -310,67 +310,23 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     def create_export(self, context, volume):
         """Creates an export for a logical volume."""
-        iscsi_name = "%s%s" % (CONF.iscsi_target_prefix, volume['name'])
-        # set volume path properly for ZFS
-        volume_path = "/dev/zvol/%s/%s" % (self.configuration.san_zfs_volume_base,
-                                           volume['name'])
-        model_update = {}
+        zfs_poolname = self._build_zfs_poolname(volume['name'])
 
-        # TODO(jdg): In the future move all of the dependent stuff into the
-        # cooresponding target admin class
-        if not isinstance(self.tgtadm, iscsi.TgtAdm):
-            lun = 0
-            self._ensure_iscsi_targets(context, volume['host'])
-            iscsi_target = self.db.volume_allocate_iscsi_target(context,
-                                                                volume['id'],
-                                                                volume['host'])
-        else:
-            lun = 1
-            iscsi_target = 0
-
-        # NOTE(jdg): For TgtAdm case iscsi_name is the ONLY param we need
-        # should clean this all up at some point in the future
-        tid = self.tgtadm.create_iscsi_target(iscsi_name,
-                                              iscsi_target,
-                                              0,
-                                              volume_path)
+        # zfs doesn't return anything valuable.
+        self._execute(CONF.san_zfs_command, 'set', 'shareiscsi=on',
+                      zfs_poolname, run_as_root=True)
+        
         model_update['provider_location'] = _iscsi_location(
             CONF.iscsi_ip_address, tid, iscsi_name, lun)
         return model_update
 
     def remove_export(self, context, volume):
         """Removes an export for a logical volume."""
-        # NOTE(jdg): tgtadm doesn't use the iscsi_targets table
-        # TODO(jdg): In the future move all of the dependent stuff into the
-        # cooresponding target admin class
-        if not isinstance(self.tgtadm, iscsi.TgtAdm):
-            try:
-                iscsi_target = self.db.volume_get_iscsi_target_num(context,
-                                                               volume['id'])
-            except exception.NotFound:
-                LOG.info(_("Skipping remove_export. No iscsi_target "
-                           "provisioned for volume: %s"), volume['id'])
-                return
-        else:
-            iscsi_target = 0
+        zfs_poolname = self._build_zfs_poolname(volume['name'])
 
-        try:
-
-            # NOTE: provider_location may be unset if the volume hasn't
-            # been exported
-            location = volume['provider_location'].split(' ')
-            iqn = location[1]
-
-            # ietadm show will exit with an error
-            # this export has already been removed
-            self.tgtadm.show_target(iscsi_target, iqn=iqn)
-
-        except Exception as e:
-            LOG.info(_("Skipping remove_export. No iscsi_target "
-                       "is presently exported for volume: %s"), volume['id'])
-            return
-
-        self.tgtadm.remove_iscsi_target(iscsi_target, 0, volume['id'])
+        # zfs doesn't return anything valuable.
+        self._execute(CONF.san_zfs_command, 'set', 'shareiscsi=off',
+                      zfs_poolname, run_as_root=True)
 
     def check_for_export(self, context, volume_id):
         """Make sure volume is exported."""
