@@ -44,10 +44,24 @@ from cinder.volume.drivers.san import san
 LOG = logging.getLogger(__name__)
 
 san_opts = [
+    cfg.StrOpt('san_zfs_volume_base',
+               default='cinder',
+               help='Name for the pool that will contain exported volumes'),
     cfg.StrOpt('san_zfs_command',
                default='zfs',
                help='The ZFS command.'),
-    ]
+    cfg.StrOpt('san_zpool_command',
+               default='zpool',
+               help='The ZPOOL command.'),
+    cfg.FloatOpt('zol_max_over_subscription_ratio',
+                 # This option exists to provide a default value for the
+                 # ZOL driver which is different than the global default.
+                 default=1.0,
+                 help='max_over_subscription_ratio setting for the ZOL '
+                      'driver.  If set, this takes precedence over the '
+                      'general max_over_subscription_ratio option.  If '
+                      'None, the general option is used.')
+]
 
 CONF = cfg.CONF
 CONF.register_opts(san_opts)
@@ -70,7 +84,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     Make sure you can login using san_login & san_password/san_private_key
     """
-    ZFSCMD = CONF.san_zfs_command
+    VERSION = '2.0.0'
 
     _local_execute = utils.execute
 
@@ -97,14 +111,20 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             self.target_mapping[self.configuration.safe_get('iscsi_helper')]
 
         LOG.debug('Attempting to initialize ZOL driver with the '
-                  'following target_driver: %s',
-                  target_driver)
+                  'following target_driver: %s', target_driver)
 
         self.target_driver = importutils.import_object(
             target_driver,
             configuration=self.configuration,
             db=self.db,
             executor=self._execute)
+        self.protocol = self.target_driver.protocol
+
+        self._sparse_copy_volume = False
+
+        if self.configuration.zol_max_over_subscription_ratio is not None:
+            self.configuration.max_over_subscription_ratio = \
+                self.configuration.zol_max_over_subscription_ratio
 
         LOG.info("run local = %s (%s)" % (self.run_local, CONF.san_is_local))
 
@@ -115,10 +135,10 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     def _execute(self, *cmd, **kwargs):
         if self.run_local:
-            LOG.debug("LOCAL execute cmd %s (%s)" % (cmd, kwargs))
+            LOG.debug("LOCAL execute cmd: %s %s" % (cmd, kwargs))
             return self._local_execute(*cmd, **kwargs)
         else:
-            LOG.debug("SSH execute cmd %s (%s)" % (cmd, kwargs))
+            LOG.debug("SSH execute cmd: %s %s" % (cmd, kwargs))
             check_exit_code = kwargs.pop('check_exit_code', None)
             command = ' '.join(cmd)
             return self._run_ssh(command, check_exit_code)
@@ -127,7 +147,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         """Creates a snapshot."""
 	zfs_poolname = self._build_zfs_poolname(snapshot['volume_name'])
         snap_path = "%s@%s" % (zfs_poolname, snapshot['name'])
-        self._execute(self.ZFSCMD, 'snapshot', snap_path,
+        self._execute(CONF.san_zfs_command, 'snapshot', snap_path,
                                     run_as_root=True)
 
     def delete_snapshot(self, snapshot):
@@ -138,26 +158,123 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             # If the snapshot isn't present, then don't attempt to delete
 	    LOG.debug("SNAPSHOT NOT FOUND %s",(snap_path))
             return True
-        self._execute(self.ZFSCMD, 'destroy', snap_path,
+        self._execute(CONF.san_zfs_command, 'destroy', snap_path,
                                     run_as_root=True)
 
     def _create_volume(self, volume_name, sizestr):
         zfs_poolname = self._build_zfs_poolname(volume_name)
 
         # Create a zfs volume
-        cmd = [self.ZFSCMD, 'create']
+        cmd = [CONF.san_zfs_command, 'create']
         if CONF.san_thin_provision:
             cmd.append('-s')
         cmd.extend(['-V', sizestr])
         cmd.append(zfs_poolname)
         self._execute(*cmd, run_as_root=True)
 
+    def _update_volume_stats(self):
+        """Retrieve stats info from volume group."""
+
+        LOG.debug("Updating volume stats")
+        #if self.vg is None:
+        #    LOG.warning(_LW('Unable to update stats on non-initialized '
+        #                    'Volume Group: %s'),
+        #                self.configuration.san_zfs_volume_base)
+        #    return
+
+        data = {}
+
+        # Note(zhiteng): These information are driver/backend specific,
+        # each driver may define these values in its own config options
+        # or fetch from driver specific configuration file.
+        data["volume_backend_name"] = self.backend_name
+        data["vendor_name"] = 'Open Source'
+        data["driver_version"] = self.VERSION
+        data["storage_protocol"] = self.protocol
+        data["pools"] = []
+
+        # zpool get -Hp size share
+        volgrp = self.configuration.san_zfs_volume_base.split('/')[0]
+        total_capacity = self._execute(CONF.san_zpool_command,
+                                       'get', '-Hp', 'size',
+                                       volgrp, run_as_root=True)
+        if total_capacity:
+            total_capacity = int(total_capacity[0].split( )[2])
+        else:
+            total_capacity = 0
+            
+        # zfs get -Hpovalue available share/VirtualMachines/Blade_Center
+        free_capacity = self._execute(CONF.san_zfs_command,
+                                      'get', '-Hpovalue', 'available',
+                                      self.configuration.san_zfs_volume_base,
+                                      run_as_root=True)
+        if free_capacity:
+            free_capacity = int(free_capacity[0])
+        else:
+            free_capacity = 0
+
+        provisioned_capacity = round(total_capacity - free_capacity, 2)
+
+        location_info = "ZFSonLinuxISCSIDriver:%s" % self.hostname
+
+        thin_enabled = self.configuration.san_thin_provision == 'true'
+
+        # Calculate the total volumes used by the VG group.
+        # This includes volumes and snapshots.
+        total_volumes = self._execute(CONF.san_zfs_command,
+                                      'list', '-Hroname',
+                                      self.configuration.san_zfs_volume_base,
+                                      run_as_root=True)
+        if total_volumes:
+            total_volumes = len(total_volumes[0])
+        else:
+            total_volumes = 0
+
+        # Skip enabled_pools setting, treat the whole backend as one pool
+        # XXX FIXME if multipool support is added to LVM driver.
+        # allocated_capacity_gb=0
+        single_pool = {}
+        single_pool.update(dict(
+            pool_name=volgrp,
+            total_capacity_gb=int(total_capacity / 1024 / 1024 / 1024),
+            free_capacity_gb=int(free_capacity / 1024 / 1024 / 1024),
+            provisioned_capacity_gb=int(provisioned_capacity / 1024 / 1024 / 1024),
+            reserved_percentage=self.configuration.reserved_percentage,
+            location_info=location_info,
+            QoS_support=False,
+            max_over_subscription_ratio=(
+                self.configuration.max_over_subscription_ratio),
+            thin_provisioning_support=thin_enabled,
+            thick_provisioning_support=not thin_enabled,
+            total_volumes=total_volumes,
+            filter_function=self.get_filter_function(),
+            goodness_function=self.get_goodness_function(),
+            multiattach=False
+        ))
+        data["pools"].append(single_pool)
+
+        # Check availability of sparse volume copy.
+        data['sparse_copy_volume'] = self._sparse_copy_volume
+
+        self._stats = data
+
+    def get_volume_stats(self, refresh=False):
+        """Get volume status.
+
+        If 'refresh' is True, run update the stats first.
+        """
+
+        if refresh:
+            self._update_volume_stats()
+
+        return self._stats
+
     def _volume_not_present(self, volume_name):
         zfs_poolname = self._build_zfs_poolname(volume_name)
 	LOG.debug("ZFS_POOLNAME (%s)" % (zfs_poolname))
 
         try:
-            out, err = self._execute(self.ZFSCMD, 'list', '-H', 
+            out, err = self._execute(CONF.san_zfs_command, 'list', '-H', 
                                      zfs_poolname, run_as_root=True)
             if out.startswith(zfs_poolname):
                 return False
@@ -170,9 +287,9 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         """Creates a volume from a snapshot."""
         zfs_snap = self._build_zfs_poolname(snapshot['name'])
         zfs_vol = self._build_zfs_poolname(snapshot['name'])
-        self._execute(self.ZFSCMD, 'clone', zfs_snap,
+        self._execute(CONF.san_zfs_command, 'clone', zfs_snap,
                       zfs_vol, run_as_root=True)
-        self._execute(self.ZFSCMD, 'promote', zfs_vol, run_as_root=True)
+        self._execute(CONF.san_zfs_command, 'promote', zfs_vol, run_as_root=True)
 
     def delete_volume(self, volume):
         """Deletes a volume."""
@@ -181,13 +298,14 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 	    LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
             return True
         zfs_poolname = self._build_zfs_poolname(volume['name'])
-        self._execute(self.ZFSCMD, 'destroy', zfs_poolname, run_as_root=True)
+        self._execute(CONF.san_zfs_command, 'destroy', zfs_poolname, run_as_root=True)
 
     def create_export(self, context, volume):
         """Creates an export for a logical volume."""
         iscsi_name = "%s%s" % (CONF.iscsi_target_prefix, volume['name'])
         # set volume path properly for ZFS
-        volume_path = "/dev/zvol/%s/%s" % (CONF.volume_group, volume['name'])
+        volume_path = "/dev/zvol/%s/%s" % (self.configuration.san_zfs_volume_base,
+                                           volume['name'])
         model_update = {}
 
         # TODO(jdg): In the future move all of the dependent stuff into the
@@ -279,5 +397,6 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         return zvoldev
 
     def _build_zfs_poolname(self, volume_name):
-        zfs_poolname = '%s%s' % (CONF.san_zfs_volume_base, volume_name)
+        zfs_poolname = '%s%s' % (self.configuration.san_zfs_volume_base,
+                                 volume_name)
         return zfs_poolname
