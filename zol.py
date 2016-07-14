@@ -234,12 +234,13 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
                                       self.configuration.san_zfs_volume_base,
                                       run_as_root=True)
         if total_volumes:
-            total_volumes = len(total_volumes[0])
+            # We get the base fs here, which isn't a volume.
+            total_volumes = len(total_volumes[0]) - 1
         else:
             total_volumes = 0
 
         # Skip enabled_pools setting, treat the whole backend as one pool
-        # XXX FIXME if multipool support is added to LVM driver.
+        # XXX FIXME support multiple pools (?)
         # allocated_capacity_gb=0
         single_pool = {}
         single_pool.update(dict(
@@ -294,7 +295,8 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
     def create_volume_from_snapshot(self, volume, snapshot):
         """Creates a volume from a snapshot."""
         zfs_snap = self._build_zfs_poolname(snapshot['name'])
-        zfs_vol = self._build_zfs_poolname(snapshot['name'])
+        zfs_vol = self._build_zfs_poolname(volume['name'])
+
         self._execute(CONF.san_zfs_command, 'clone', zfs_snap,
                       zfs_vol, run_as_root=True)
         self._execute(CONF.san_zfs_command, 'promote', zfs_vol, run_as_root=True)
@@ -308,10 +310,11 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         zfs_poolname = self._build_zfs_poolname(volume['name'])
         self._execute(CONF.san_zfs_command, 'destroy', zfs_poolname, run_as_root=True)
 
-    def create_export(self, context, volume):
+    def create_export(self, context, volume, connector=None):
         """Creates an export for a logical volume."""
         zfs_poolname = self._build_zfs_poolname(volume['name'])
-
+        LOG.debug('create_export(): Trying to share "%s"', zfs_poolname)
+        
         # zfs doesn't return anything valuable.
         self._execute(CONF.san_zfs_command, 'set', 'shareiscsi=on',
                       zfs_poolname, run_as_root=True)
