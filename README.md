@@ -57,3 +57,22 @@ You will also need to create a volume type for this
 openstack volume type create --description "ZFS volumes" --public zfs  
 openstack volume type set --property volume_backend_name=ZOL zfs  
 ```
+
+To make sure you have a flavor that prefers ZOL as backend, create
+some flavors:
+
+```
+openstack flavor create --ram   512 --disk  2 --vcpus 1 --disk  5 z1.nano
+openstack flavor create --ram  1024 --disk 10 --vcpus 1 --disk  5 z1.tiny
+openstack flavor create --ram  2048 --disk 20 --vcpus 1 --disk 10 z1.small
+openstack flavor create --ram  4096 --disk 40 --vcpus 1           z1.medium
+openstack flavor create --ram  8192 --disk 40 --vcpus 1           z1.large
+openstack flavor create --ram 16384 --disk 40 --vcpus 1           z1.xlarge
+# [etc]
+
+openstack flavor list --all --column Name --format csv --quote none | \
+    grep ^z | \
+    while read flavor; do
+        openstack flavor set --property volume_backend_name=ZOL "${flavor}"
+    done
+```
