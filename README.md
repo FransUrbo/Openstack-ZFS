@@ -82,3 +82,42 @@ openstack flavor list --all --column Name --format csv --quote none | \
         openstack flavor set --property volume_backend_name=ZOL "${flavor}"
     done
 ```
+
+# Security
+
+Even though ZoL now have support for allow/unallow in its master branch,
+I have not yet upgraded so can there for not comment on that part. I
+run my zfs/zpool commands as the root user, but to improve the security
+somewhat, I've restricted what the sshkey (see the "san_private_key"
+option above) can do.
+
+So in the /root/.ssh/authorized_keys file, I have the following:
+
+```
+from="192.168.69.1",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding,command="/root/bin/zfswrapper $SSH_ORIGINAL_COMMAND" ssh-rsa AAAAB... user@host
+```
+
+This makes sure that the key specified, comming from 192.168.69.1 (which
+is my internal router) can only run the "/root/bin/zfswrapper"
+command.
+
+This shell script looks like this (and is located on the ZoL SAN host):
+
+```
+#!/bin/sh
+
+# https://www.logilab.org/blogentry/114769
+# http://larstobi.blogspot.co.uk/2011/01/restrict-ssh-access-to-one-command-but.html
+echo "[$(date)] ${SSH_ORIGINAL_COMMAND}" >> /root/.zfsopenstack.log
+
+CMD=$(echo ${SSH_ORIGINAL_COMMAND} | awk '{print $1}')
+if [ "${CMD}" != "zfs" -a \
+     "${CMD}" != "tgtadm" -a \
+     "${CMD}" != "zpool" ]
+then
+    echo "Can do only zfs/tgtadm stuff here"
+    exit 1
+fi
+
+exec ${SSH_ORIGINAL_COMMAND}
+```
