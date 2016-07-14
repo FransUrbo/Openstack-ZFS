@@ -51,6 +51,12 @@ verbose = true
 zfs: CommandFilter, /sbin/zfs, root  
 ```
 
+Create a host aggregate:
+
+```
+openstack aggregate create --zone nova --property volume_type=ZOL zfs
+```
+
 You will also need to create a volume type for this
 
 ```
