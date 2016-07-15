@@ -45,6 +45,7 @@ LOG = logging.getLogger(__name__)
 
 san_opts = [
     cfg.StrOpt('san_zfs_volume_base',
+               # TODO: Make this a list.
                default='cinder',
                help='Name for the pool that will contain exported volumes'),
     cfg.StrOpt('san_zfs_command',
@@ -60,7 +61,37 @@ san_opts = [
                  help='max_over_subscription_ratio setting for the ZOL '
                       'driver.  If set, this takes precedence over the '
                       'general max_over_subscription_ratio option.  If '
-                      'None, the general option is used.')
+                      'None, the general option is used.'),
+    cfg.StrOpt('san_zfs_compression',
+               default='on',
+               choices=['on', 'off', 'gzip', 'gzip-1', 'gzip-2', 'gzip-3',
+                        'gzip-4', 'gzip-5', 'gzip-6', 'gzip-7', 'gzip-8',
+                        'gzip-9', 'lzjb', 'zle', 'lz4'],
+               help='Compression value for new ZFS volumes.'),
+    cfg.StrOpt('san_zfs_dedup',
+               default='off',
+               choices=['on', 'off', 'sha256', 'verify', 'sha256, verify'],
+               help='Deduplication value for new ZFS volumes.'),
+    cfg.IntOpt('san_zfs_blocksize',
+               default=4096,
+               help='Block size for datasets'),
+    cfg.StrOpt('san_zfs_checksum',
+               default='on',
+               choices=['on', 'off', 'fletcher2', 'fletcher4', 'sha256'],
+               help='Checksum value for new ZFS volumes.'),
+    cfg.StrOpt('san_zfs_copies',
+               default='1',
+               choices=['1', '2', '3'],
+               help='Number of data copies for new ZFS volumes.'),
+    cfg.StrOpt('san_zfs_sync',
+               default='standard',
+               choices=['standard', 'always', 'disabled'],
+               help='Behaviour of synchronous requests for new ZFS volumes.'),
+    cfg.StrOpt('san_zfs_encryption',
+               default='off',
+               choices=['on', 'off', 'aes-128-ccm', 'aes-192-ccm', 'aes-256-ccm',
+                        'aes-128-gcm', 'aes-192-gcm', 'aes-256-gcm'],
+               help='Encryption value for new ZFS volumes.')
 ]
 
 CONF = cfg.CONF
@@ -173,6 +204,13 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         if CONF.san_thin_provision:
             cmd.append('-s')
         cmd.extend(['-V', sizestr])
+        #cmd.extend(['-o', 'encryption='+CONF.san_zfs_encryption])
+        cmd.extend(['-o', 'compression='+CONF.san_zfs_compression])
+        cmd.extend(['-o', 'dedup='+CONF.san_zfs_dedup])
+        cmd.extend(['-o', 'blocksize='+str(CONF.san_zfs_blocksize)])
+        cmd.extend(['-o', 'checksum='+CONF.san_zfs_checksum])
+        cmd.extend(['-o', 'copies='+CONF.san_zfs_copies])
+        cmd.extend(['-o', 'sync='+CONF.san_zfs_sync])
         cmd.append(zfs_poolname)
         LOG.debug('About to run command: "%s"', *cmd)
         self._execute(*cmd, run_as_root=True)
@@ -184,11 +222,10 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         """Retrieve stats info from volume group."""
 
         LOG.debug("Updating volume stats")
-        #if self.vg is None:
-        #    LOG.warning(_LW('Unable to update stats on non-initialized '
-        #                    'Volume Group: %s'),
-        #                self.configuration.san_zfs_volume_base)
-        #    return
+
+        # XXX FIXME support multiple pools (?)
+        #           Should be possible to do this in a loop over "san_zfs_volume_base".
+        volgrp = self.configuration.san_zfs_volume_base.split('/')[0]
 
         data = {}
 
@@ -202,7 +239,6 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         data["pools"] = []
 
         # zpool get -Hp size share
-        volgrp = self.configuration.san_zfs_volume_base.split('/')[0]
         total_capacity = self._execute(CONF.san_zpool_command,
                                        'get', '-Hp', 'size',
                                        volgrp, run_as_root=True)
@@ -241,7 +277,8 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
         # Skip enabled_pools setting, treat the whole backend as one pool
         # XXX FIXME support multiple pools (?)
-        # allocated_capacity_gb=0
+        #           Should be possible to do this in a loop over "san_zfs_volume_base".
+        # allocated_capacity_gb=0 (?)
         single_pool = {}
         single_pool.update(dict(
             pool_name=volgrp,
