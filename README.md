@@ -30,19 +30,72 @@ To install copy zol.py to /usr/lib/python2.7/dist-packages/cinder/volume/drivers
 ```
 # ZFS/ZoL driver - https://github.com/FransUrbo/Openstack-ZFS  
 [zol]
-volume_driver = cinder.volume.drivers.zol.ZFSonLinuxISCSIDriver  
-volume_group = <zvol_path>  
-iscsi_ip_prefix = <ip_prefix>  
-iscsi_ip_address = <cinder_ip>  
-san_thin_provision = <true|false>  
-san_ip = $my_ip
-san_zfs_volume_base = <zvol_path>  
-san_is_local = <true|false>  
-use_cow_images = <true|false>  
-san_login = <san_admin_user>  
-san_private_key = <ssh_key_path>  
-san_zfs_command = <path_to_zfs_or_wrapper_on_san>  
-verbose = true  
+# Driver to use for volume creation. (string value)
+volume_driver = cinder.volume.drivers.zol.ZFSonLinuxISCSIDriver
+
+# The IP address that the iSCSI daemon is listening on. (string value)
+#iscsi_ip_address = $my_ip
+
+# Use thin provisioning for SAN volumes? (boolean value)
+#san_thin_provision = true
+
+# IP address of SAN controller. (string value)
+#san_ip = 
+
+# Execute commands locally instead of over SSH; use if the volume service is
+# running on the SAN device (boolean value)
+#san_is_local = false
+
+# Username for SAN controller (string value)
+#san_login = admin
+
+# Password for SAN controller (string value)
+#san_password =
+
+# Filename of private key to use for SSH authentication (string value)
+#san_private_key =
+
+# Filesystem base where new ZFS volumes will be created. (string value)
+#san_zfs_volume_base = 
+
+# The ZFS command. (string value)
+#san_zfs_command = /sbin/zfs
+
+# The ZPOOL command. (string value)
+#san_zpool_command = /sbin/zpool
+
+# max_over_subscription_ratio setting for the ZOL driver. (float value)
+# If set, this takes precedence over the general max_over_subscription_ratio option.
+# If None, the general option is used.
+#zol_max_over_subscription_ratio = 1.0
+
+# Compression value for new ZFS volumes. (string value)
+# Allowed values: on, off, gzip, gzip-1, gzip-2, gzip-3, gzip-4, gzip-5, gzip-6, gzip-7, gzip-8, gzip-9, lzjb, zle, lz4
+#san_zfs_compression = on
+
+# Deduplication value for new ZFS volumes. (string value)
+# Allowed values: on, off, sha256, verify, sha256,verify
+#san_zfs_dedup = off
+
+# Block size for datasets. (integer value)
+#san_zfs_blocksize = 4096
+
+# Checksum value for new ZFS volumes. (string value)
+# Allowed values: on, off, fletcher2, fletcher4, sha256
+#san_zfs_checksum = on
+
+# Number of data copies for new ZFS volumes. (string option)
+# Allowed values: 1, 2, 3
+#san_zfs_copies = 1
+
+# Behaviour of synchronous requests for new ZFS volumes. (string value)
+# Allowed values: standard, always, disabled
+#san_zfs_sync = standard
+
+# Encryption value for new ZFS volumes. (string value)
+# Allowed values: on, off, aes-128-ccm, aes-192-ccm, aes-256-ccm, aes-128-gcm, aes-192-gcm, aes-256-gcm
+# NOTE: This is currently disabled until ZoL PR #4329 is accepted.
+#san_zfs_encryption = off
 ```
 
 /etc/cinder/rootwrap.d/volume.filters needs the following line added as well  
