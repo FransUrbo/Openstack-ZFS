@@ -166,11 +166,10 @@ This shell script looks like this (and is located on the ZoL SAN host):
 echo "[$(date)] ${SSH_ORIGINAL_COMMAND}" >> /root/.zfsopenstack.log
 
 CMD=$(echo ${SSH_ORIGINAL_COMMAND} | awk '{print $1}')
-if [ "${CMD}" != "zfs" -a \
-     "${CMD}" != "tgtadm" -a \
-     "${CMD}" != "zpool" ]
+if [ "${CMD}" != "/sbin/zfs" -a \
+     "${CMD}" != "/sbin/zpool" ]
 then
-    echo "Can do only zfs/tgtadm stuff here"
+    echo "Can do only zfs/zpool stuff here"
     exit 1
 fi
 
