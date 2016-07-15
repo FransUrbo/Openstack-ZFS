@@ -94,7 +94,6 @@ volume_driver = cinder.volume.drivers.zol.ZFSonLinuxISCSIDriver
 
 # Encryption value for new ZFS volumes. (string value)
 # Allowed values: on, off, aes-128-ccm, aes-192-ccm, aes-256-ccm, aes-128-gcm, aes-192-gcm, aes-256-gcm
-# NOTE: This is currently disabled until ZoL PR #4329 is accepted.
 #san_zfs_encryption = off
 ```
 

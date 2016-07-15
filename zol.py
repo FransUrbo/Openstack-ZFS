@@ -204,7 +204,8 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         if CONF.san_thin_provision:
             cmd.append('-s')
         cmd.extend(['-V', sizestr])
-        #cmd.extend(['-o', 'encryption='+CONF.san_zfs_encryption])
+        if self._stats['pools'][0]['encryption_support']:
+            cmd.extend(['-o', 'encryption='+CONF.san_zfs_encryption])
         cmd.extend(['-o', 'compression='+CONF.san_zfs_compression])
         cmd.extend(['-o', 'dedup='+CONF.san_zfs_dedup])
         cmd.extend(['-o', 'blocksize='+str(CONF.san_zfs_blocksize)])
@@ -238,7 +239,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         data["storage_protocol"] = self.protocol
         data["pools"] = []
 
-        # zpool get -Hp size share
+        # CMD: zpool get -Hp size share
         total_capacity = self._execute(CONF.san_zpool_command,
                                        'get', '-Hp', 'size',
                                        volgrp, run_as_root=True)
@@ -247,7 +248,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         else:
             total_capacity = 0
             
-        # zfs get -Hpovalue available share/VirtualMachines/Blade_Center
+        # CMD: zfs get -Hpovalue available share/VirtualMachines/Blade_Center
         free_capacity = self._execute(CONF.san_zfs_command,
                                       'get', '-Hpovalue', 'available',
                                       self.configuration.san_zfs_volume_base,
@@ -256,6 +257,19 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             free_capacity = int(free_capacity[0])
         else:
             free_capacity = 0
+
+        # CMD: zpool get -Hp feature@encryption share
+        feature = self._execute(CONF.san_zpool_command,
+                                'get', '-Hp', 'feature@encryption',
+                                volgrp, run_as_root=True)
+        if feature[0]:
+            feature_val = feature[0].split( )[2]
+            if feature_val == 'enabled':
+                supports_encryption = True
+            else:
+                supports_encryption = False
+        else:
+            supports_encryption = False
 
         provisioned_capacity = round(total_capacity - free_capacity, 2)
 
@@ -295,7 +309,8 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             total_volumes=total_volumes,
             filter_function=self.get_filter_function(),
             goodness_function=self.get_goodness_function(),
-            multiattach=False
+            multiattach=False,
+            encryption_support=supports_encryption
         ))
         data["pools"].append(single_pool)
 
