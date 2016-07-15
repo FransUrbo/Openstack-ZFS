@@ -101,7 +101,9 @@ volume_driver = cinder.volume.drivers.zol.ZFSonLinuxISCSIDriver
 /etc/cinder/rootwrap.d/volume.filters needs the following line added as well  
 
 ```
-zfs: CommandFilter, /sbin/zfs, root  
+# ZFS/ZoL plugin
+zfs: CommandFilter, /sbin/zfs, root
+zpool: CommandFilter, /sbin/zpool, root
 ```
 
 Create a host aggregate:
