@@ -103,6 +103,8 @@ volume_driver = cinder.volume.drivers.zol.ZFSonLinuxISCSIDriver
 # ZFS/ZoL plugin
 zfs: CommandFilter, /sbin/zfs, root
 zpool: CommandFilter, /sbin/zpool, root
+iscsiadm: CommandFilter, /usr/bin/iscsiadm, root
+find: CommandFilter, /usr/bin/find, root
 ```
 
 Create a host aggregate:
