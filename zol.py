@@ -345,9 +345,15 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     def create_volume_from_snapshot(self, volume, snapshot):
         """Creates a volume from a snapshot."""
-        zfs_snap = self._build_zfs_poolname(snapshot['name'])
-        zfs_vol = self._build_zfs_poolname(volume['name'])
+        LOG.debug('create_volume_from_snapshot: volume=%s', volume)
+        LOG.debug('create_volume_from_snapshot: snapshot=%s', snapshot)
 
+        vol = 'volume-'+snapshot['volume_id']+'@snapshot-'+snapshot['id']
+        zfs_snap = self._build_zfs_poolname(vol)
+        zfs_vol = self._build_zfs_poolname('volume-'+volume['id'])
+        LOG.debug('create_volume_from_snapshot: zfs_snap=%s, zfs_vol=%s',
+                  zfs_snap, zfs_vol)
+        
         self._execute(CONF.san_zfs_command, 'clone', zfs_snap,
                       zfs_vol, run_as_root=True)
         self._execute(CONF.san_zfs_command, 'promote', zfs_vol, run_as_root=True)
