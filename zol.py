@@ -197,14 +197,14 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         self._execute(CONF.san_zfs_command, 'destroy', snap_path,
                                     run_as_root=True)
 
-    def _create_volume(self, volume_name, sizestr):
-        zfs_poolname = self._build_zfs_poolname(volume_name)
+    def create_volume(self, volume):
+        zfs_poolname = self._build_zfs_poolname(volume['name'])
 
         # Create a zfs volume
         cmd = [CONF.san_zfs_command, 'create']
         if CONF.san_thin_provision:
             cmd.append('-s')
-        cmd.extend(['-V', sizestr])
+        cmd.extend(['-V', volume['size']])
         if self._stats['pools'][0]['encryption_support']:
             cmd.extend(['-o', 'encryption='+CONF.san_zfs_encryption])
         cmd.extend(['-o', 'compression='+CONF.san_zfs_compression])
@@ -214,11 +214,9 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         cmd.extend(['-o', 'copies='+CONF.san_zfs_copies])
         cmd.extend(['-o', 'sync='+CONF.san_zfs_sync])
         cmd.append(zfs_poolname)
+
         LOG.debug('About to run command: "%s"', *cmd)
         self._execute(*cmd, run_as_root=True)
-
-    def create_volume(self, volume):
-        self._create_volume(volume['name'], self._sizestr(volume['size']))
 
     def _update_volume_stats(self):
         """Retrieve stats info from volume group."""
@@ -328,6 +326,17 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             self._update_volume_stats()
 
         return self._stats
+
+    def extend_volume(self, volume, new_size):
+        """Extend an existing volume's size."""
+        zfs_poolname = self._build_zfs_poolname(volume['name'])
+        try:
+            out, err = self._execute(CONF.san_zfs_command, 'set',
+                                     'volsize=' + self._sizestr(new_size), 
+                                     zfs_poolname, run_as_root=True)
+        except Exception as e:
+            return False
+        return True
 
     def _volume_not_present(self, volume_name):
         zfs_poolname = self._build_zfs_poolname(volume_name)
@@ -585,11 +594,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             raise
 
     def local_path(self, volume):
-        zfs_poolname = self._build_zfs_poolname(volume['name'])
-        zvoldev = '/dev/zvol/%s' % zfs_poolname
-        return zvoldev
+        return '/dev/zvol/%s' % self._build_zfs_poolname(volume['name'])
 
     def _build_zfs_poolname(self, volume_name):
-        zfs_poolname = '%s/%s' % (self.configuration.san_zfs_volume_base,
-                                 volume_name)
-        return zfs_poolname
+        return '%s/%s' % (self.configuration.san_zfs_volume_base, volume_name)
