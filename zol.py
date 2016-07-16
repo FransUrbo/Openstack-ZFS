@@ -359,24 +359,29 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 	    LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
             return True
 
+        # See if this target is logged in.
         target = self._get_iscsi_sessions(volume['name_id'])
         if target:
             LOG.debug('delete_volume: _get_iscsi_sessions() successful')
+
+            # Yes. Logout the target.
             if self._logout_target(self.configuration.san_ip + ':' +
                                    str(self.configuration.iscsi_port),
                                    target):
                 LOG.debug('delete_volume: _logout_target() successful')
-                
-                zfs_poolname = self._build_zfs_poolname(volume['name'])
-                if not self._execute(CONF.san_zfs_command, 'destroy', zfs_poolname,
-                                     run_as_root=True):
-                    LOG.error(_LE('Cannot delete volume'))
+                return False
             else:
                 LOG.error(_LE('Cannot logout iSCSI sessions, cannot delete volume'))
 
+        # Destroy the volume.
+        zfs_poolname = self._build_zfs_poolname(volume['name'])
+        if self._execute(CONF.san_zfs_command, 'destroy', zfs_poolname,
+                             run_as_root=True):
+            LOG.debug('Delete volume successful')
             return True
         else:
-            LOG.error(_LE('Cannot get iSCSI sessions, cannot delete volume'))
+            LOG.error(_LE('Cannot delete volume'))
+            return False
 
     def _find_target(self, volume_id):
         """Get the iSCSI target for the volume.
@@ -461,8 +466,6 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
                                         run_as_root=True)
             LOG.debug('_get_iscsi_sessions: out=%s (%s)', out, _err)
         except processutils.ProcessExecutionError as ex:
-            LOG.error(_LE("ISCSI get sessions attempt failed for: %s") %
-                      volume_id)
             LOG.debug(("Error from iscsiadm -m session: %s") % ex.stderr)
             return False
 
