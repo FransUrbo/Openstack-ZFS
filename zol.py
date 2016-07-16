@@ -1,5 +1,6 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
+# Copyright 2016 Turbo Fredriksson <turbo@bayour.com>
 # Copyright 2010 United States Government as represented by the
 # Administrator of the National Aeronautics and Space Administration.
 # Copyright 2011 Justin Santa Barbara
@@ -20,10 +21,10 @@
 """
 Driver for ZFS-on-Linux-stored volumes.
 
-This is mainly taken from  http://www.logilab.org/blogentry/114769 with
-modifications to make it work well with cinder and OpenStack Folsom.
+This is a fork from https://github.com/tparker00/Openstack-ZFS by tparker00
+with modifications to make it work well with Cinder and OpenStack Mitaka.
 
-My setup is utilizing locally stored ZFS volumes so SSH access was not tested
+My setup is utilizing remotly stored ZFS volumes so local access was not tested.
 """
 
 import os
