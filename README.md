@@ -23,9 +23,25 @@ Based off of work by tparker00. https://github.com/tparker00/Openstack-ZFS
 
 Based off of work from David Douard in the following blog post. http://www.logilab.org/blogentry/114769
 
+# Functionality
+
+The documentation (http://docs.openstack.org/developer/cinder/devref/drivers.html#core-functionality)
+talks about drivers needing to support the following functionality:
+
+  * Volume Create/Delete		WORKS
+  * Volume Attach/Detach		UNTESTED
+  * Snapshot Create/Delete		WORKS
+  * Create Volume from Snapshot		WORKS
+  * Get Volume Stats			WORKS
+  * Copy Image to Volume		WORKS (even though I haven't implemented it! :)
+  * Copy Volume to Image		UNTESTED
+  * Clone Volume			WORKS
+  * Extend Volume			WORKS
+
 # Install
 
-To install copy zol.py to /usr/lib/python2.7/dist-packages/cinder/volume/drivers and add the following to /etc/cinder/cinder.conf
+To install copy zol.py to /usr/lib/python2.7/dist-packages/cinder/volume/drivers and add
+the following to /etc/cinder/cinder.conf
 
 ```
 # ZFS/ZoL driver - https://github.com/FransUrbo/Openstack-ZFS  
