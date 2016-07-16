@@ -34,7 +34,7 @@ talks about drivers needing to support the following functionality:
   * Create Volume from Snapshot		WORKS
   * Get Volume Stats			WORKS
   * Copy Image to Volume		WORKS (even though I haven't implemented it! :)
-  * Copy Volume to Image		UNTESTED
+  * Copy Volume to Image		WORKS (even though I haven't implemented it! :)
   * Clone Volume			WORKS
   * Extend Volume			WORKS
 
