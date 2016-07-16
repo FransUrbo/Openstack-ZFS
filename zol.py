@@ -339,6 +339,59 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             return False
         return True
 
+    def _rename_volume(self, old_name, new_name):
+        # See if this target is logged in.
+        target = self._get_iscsi_sessions(old_name)
+        if target:
+            # Yes. Logout the target.
+            if self._logout_target(self.configuration.san_ip + ':' +
+                                   str(self.configuration.iscsi_port),
+                                   target):
+                LOG.error(_LE('Cannot logout iSCSI sessions, cannot rename volume'))
+                return False
+
+        # Rename volume.
+        try:
+            self._execute(CONF.san_zfs_command, 'rename',
+                          old_name, new_name, zfs_poolname,
+                          run_as_root=True)
+        except putils.ProcessExecutionError:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(_LE('Error renaming volume'))
+                                            
+    def manage_existing(self, volume, existing_ref):
+        """Manages an existing volume.
+
+        Renames the volume to match the expected name for the volume.
+        Error checking done by manage_existing_get_size is not repeated.
+        """
+        LOG.debug('manage_existing: volume=%s', volume)
+        LOG.debug('manage_existing: existing_ref=%s', existing_ref)
+
+        if self._volume_not_present(volume['name']):
+            # If the volume isn't present, then don't attempt to delete
+	    LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
+            return True
+
+        vol_src = self._build_zfs_poolname(existing_ref['source-name'])
+        if volutils.check_already_managed_volume(vol_src):
+            raise exception.ManageExistingAlreadyManaged(volume_ref=vol_src)
+
+        # Attempt to rename the volume to match the OpenStack internal name.
+        vol_dst = self._build_zfs_poolname(volume['name'])
+        try:
+            self._rename_volume(vol_src, vol_dst)
+        except putils.ProcessExecutionError as exc:
+            exception_message = (_("Failed to rename volume %(name)s, "
+                                   "error message was: %(err_msg)s")
+                                 % {'name': vol_src,
+                                    'err_msg': exc.stderr})
+            raise exception.VolumeBackendAPIException(data=exception_message)
+                                
+    def unmanage(self, volume):
+        # TODO
+        pass
+
     def _volume_not_present(self, volume_name):
         zfs_poolname = self._build_zfs_poolname(volume_name)
 	LOG.debug("_volume_not_present(%s): %s" % (volume_name, zfs_poolname))
@@ -384,10 +437,8 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             if self._logout_target(self.configuration.san_ip + ':' +
                                    str(self.configuration.iscsi_port),
                                    target):
-                LOG.debug('delete_volume: _logout_target() successful')
-                return False
-            else:
                 LOG.error(_LE('Cannot logout iSCSI sessions, cannot delete volume'))
+                return False
 
         # Destroy the volume.
         zfs_poolname = self._build_zfs_poolname(volume['name'])
