@@ -205,7 +205,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         cmd = [CONF.san_zfs_command, 'create']
         if CONF.san_thin_provision:
             cmd.append('-s')
-        cmd.extend(['-V', volume['size']])
+        cmd.extend(['-V%sg' % volume['size']])
         if self._stats['pools'][0]['encryption_support']:
             cmd.extend(['-o', 'encryption='+CONF.san_zfs_encryption])
         cmd.extend(['-o', 'compression='+CONF.san_zfs_compression])
