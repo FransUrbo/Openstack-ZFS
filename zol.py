@@ -344,9 +344,9 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         target = self._get_iscsi_sessions(old_name)
         if target:
             # Yes. Logout the target.
-            if self._logout_target(self.configuration.san_ip + ':' +
-                                   str(self.configuration.iscsi_port),
-                                   target):
+            if not self._logout_target(self.configuration.san_ip + ':' +
+                                       str(self.configuration.iscsi_port),
+                                       target):
                 LOG.error(_LE('Cannot logout iSCSI sessions, cannot rename volume'))
                 return False
 
@@ -431,12 +431,10 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         # See if this target is logged in.
         target = self._get_iscsi_sessions(volume['name_id'])
         if target:
-            LOG.debug('delete_volume: _get_iscsi_sessions() successful')
-
             # Yes. Logout the target.
-            if self._logout_target(self.configuration.san_ip + ':' +
-                                   str(self.configuration.iscsi_port),
-                                   target):
+            if not self._logout_target(self.configuration.san_ip + ':' +
+                                       str(self.configuration.iscsi_port),
+                                       target):
                 LOG.error(_LE('Cannot logout iSCSI sessions, cannot delete volume'))
                 return False
 
@@ -509,14 +507,13 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             (out, _err) = utils.execute('iscsiadm', '-m', 'node',
                                         '-p', portal, '-T', target, '-u',
                                         run_as_root=True)
-            LOG.debug('_logout_target: out=%s (%s)', out, _err)
         except processutils.ProcessExecutionError as ex:
-            LOG.error(_LE("ISCSI logout attempt failed for: %s:%s") %
-                      portal, target)
             LOG.debug(("Error from iscsiadm -m node: %s") % ex.stderr)
+            LOG.error(_LE("ISCSI logout attempt failed for: %s:%s") %
+                      (portal, target))
             return False
 
-        # Find out if we have the words 'Login to .* successful' in the message
+        # Find out if we have the words 'Logout to .* successful' in the message
         for entry in out.splitlines():
             LOG.debug('_logout_target: CHECK: successful in %s', entry)
             if 'successful' in entry:
@@ -596,7 +593,30 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
                 'discard': False,
             }
         }
-            
+
+    def terminate_connection(self, volume, connector, **kwargs):
+        """Terminate the connection."""
+        # Find the target/iqn.
+        try:
+            target = self._find_target(volume['name_id'])
+            LOG.debug('terminate_connection: target=%s', target)
+        except:
+            LOG.error(_LE("ISCSI term connection failed for: %s") %
+                      volume['name_id'])
+            return False
+
+        target = self._get_iscsi_sessions(target)
+        if target:
+            # Yes - Logout the target.
+            if not self._logout_target(self.configuration.san_ip + ':' +
+                                       str(self.configuration.iscsi_port),
+                                       target):
+                LOG.error(_LE("ISCSI logout failed for: %s") %
+                          volume['name_id'])
+                return False
+
+        return True
+        
     def create_export(self, context, volume, connector=None):
         """Creates an export for a logical volume."""
         zfs_poolname = self._build_zfs_poolname(volume['name'])
