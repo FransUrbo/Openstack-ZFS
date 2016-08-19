@@ -182,18 +182,18 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     def create_snapshot(self, snapshot):
         """Creates a snapshot."""
-	zfs_poolname = self._build_zfs_poolname(snapshot['volume_name'])
+        zfs_poolname = self._build_zfs_poolname(snapshot['volume_name'])
         snap_path = "%s@%s" % (zfs_poolname, snapshot['name'])
         self._execute(CONF.san_zfs_command, 'snapshot', snap_path,
                                     run_as_root=True)
 
     def delete_snapshot(self, snapshot):
         """Deletes a snapshot."""
-	zfs_poolname = self._build_zfs_poolname(snapshot['volume_name'])
-	snap_path  = "%s@%s" % (zfs_poolname, snapshot['name'])
+        zfs_poolname = self._build_zfs_poolname(snapshot['volume_name'])
+        snap_path  = "%s@%s" % (zfs_poolname, snapshot['name'])
         if self._volume_not_present(snapshot['volume_name']):
             # If the snapshot isn't present, then don't attempt to delete
-	    LOG.debug("SNAPSHOT NOT FOUND %s",(snap_path))
+            LOG.debug("SNAPSHOT NOT FOUND %s",(snap_path))
             return True
         self._execute(CONF.san_zfs_command, 'destroy', snap_path,
                                     run_as_root=True)
@@ -370,7 +370,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
         if self._volume_not_present(volume['name']):
             # If the volume isn't present, then don't attempt to delete
-	    LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
+            LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
             return True
 
         vol_src = self._build_zfs_poolname(existing_ref['source-name'])
@@ -394,7 +394,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     def _volume_not_present(self, volume_name):
         zfs_poolname = self._build_zfs_poolname(volume_name)
-	LOG.debug("_volume_not_present(%s): %s" % (volume_name, zfs_poolname))
+        LOG.debug("_volume_not_present(%s): %s" % (volume_name, zfs_poolname))
 
         try:
             out, err = self._execute(CONF.san_zfs_command, 'list', '-H', 
@@ -425,7 +425,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         """Deletes a volume."""
         if self._volume_not_present(volume['name']):
             # If the volume isn't present, then don't attempt to delete
-	    LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
+            LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
             return True
 
         # See if this target is logged in.
