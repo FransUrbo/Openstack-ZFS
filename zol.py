@@ -533,36 +533,39 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         """Find the block device for this logged in iSCSI target"""
         LOG.debug('_find_iscsi_block_device(%s)', volume_id)
 
+        target = self._find_target(volume_id)
+        if not target:
+            LOG.error(_LE("ISCSI find block device failed for: %s") %
+                      volume_id)
+            return False
+
+        LOG.debug('_find_iscsi_block_device: target=%s', target)
+
         try:
-            target = self._find_target(volume_id)
-            LOG.debug('_find_iscsi_block_device: target=%s', target)
             (out, _err) = utils.execute('find', '/dev/disk/by-path', '-name',
                                         '*' + target + '*',
                                         run_as_root=True)
             LOG.debug('_find_iscsi_block_device: out=%s (%s)', out, _err)
             return out
         except processutils.ProcessExecutionError as ex:
-            LOG.error(_LE("ISCSI find block device failed for: %s") %
-                      volume_id)
+            LOG.debug(("Error from find /dev/disk/by-path: %s") % ex.stderr)
             return False
 
     def initialize_connection(self, volume, connector=None):
         """Initializes the connection and returns connection info."""
         # Find the target/iqn.
-        try:
-            target = self._find_target(volume['name_id'])
-            LOG.debug('initialize_connection: target=%s', target)
-        except:
+        target = self._find_target(volume['name_id'])
+        if not target:
             LOG.error(_LE("ISCSI init connection failed for: %s") %
                       volume['name_id'])
             return False
 
+        LOG.debug('initialize_connection: target=%s', target)
+
         # Login to the target.
-        try:
-            self._login_target(self.configuration.san_ip + ':' +
+        if self._login_target(self.configuration.san_ip + ':' +
                                str(self.configuration.iscsi_port),
-                               target)
-        except:
+                               target):
             LOG.error(_LE("ISCSI login failed for: %s") %
                       volume['name_id'])
             return False
@@ -590,13 +593,13 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             return True
 
         # Find the target/iqn.
-        try:
-            target = self._find_target(volume['name_id'])
-            LOG.debug('terminate_connection: target=%s', target)
-        except:
+        target = self._find_target(volume['name_id'])
+        if not target:
             LOG.error(_LE("ISCSI term connection failed for: %s") %
                       volume['name_id'])
             return False
+
+        LOG.debug('terminate_connection: target=%s', target)
 
         target = self._get_iscsi_sessions(target)
         if target:
