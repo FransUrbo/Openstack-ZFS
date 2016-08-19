@@ -423,20 +423,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     def delete_volume(self, volume):
         """Deletes a volume."""
-        if self._volume_not_present(volume['name']):
-            # If the volume isn't present, then don't attempt to delete
-            LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
-            return True
-
-        # See if this target is logged in.
-        target = self._get_iscsi_sessions(volume['name_id'])
-        if target:
-            # Yes. Logout the target.
-            if not self._logout_target(self.configuration.san_ip + ':' +
-                                       str(self.configuration.iscsi_port),
-                                       target):
-                LOG.error(_LE('Cannot logout iSCSI sessions, cannot delete volume'))
-                return False
+        self.terminate_connection(volume, False)
 
         # Destroy the volume.
         zfs_poolname = self._build_zfs_poolname(volume['name'])
@@ -596,6 +583,11 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     def terminate_connection(self, volume, connector, **kwargs):
         """Terminate the connection."""
+        if self._volume_not_present(volume['name']):
+            # If the volume isn't present, then don't attempt to disconnect.
+            LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
+            return True
+
         # Find the target/iqn.
         try:
             target = self._find_target(volume['name_id'])
