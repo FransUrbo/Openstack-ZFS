@@ -42,6 +42,7 @@ from cinder.i18n import _, _LE, _LI
 from cinder.volume import driver
 from cinder.volume.targets import iscsi
 from cinder.volume.drivers.san import san
+from cinder.image import image_utils
 
 LOG = logging.getLogger(__name__)
 
@@ -656,6 +657,22 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             LOG.error(_("Cannot confirm exported volume "
                         "id:%(volume_id)s.") % locals())
             raise
+
+    def copy_image_to_volume(self, context, volume, image_service, image_id):
+        """Fetch the image from image_service and write it to the volume."""
+        image_utils.fetch_to_raw(context,
+                                 image_service,
+                                 image_id,
+                                 self._find_iscsi_block_device(volume['name_id']),
+                                 self.configuration.volume_dd_blocksize,
+                                 size=volume['size'])
+
+    def copy_volume_to_image(self, context, volume, image_service, image_meta):
+        """Copy the volume to the specified image."""
+        image_utils.upload_volume(context,
+                                  image_service,
+                                  image_meta,
+                                  self._find_iscsi_block_device(volume['name_id']))
 
     def local_path(self, volume):
         return '/dev/zvol/%s' % self._build_zfs_poolname(volume['name'])
