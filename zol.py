@@ -447,7 +447,8 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         try:
             (out, _err) = utils.execute('iscsiadm', '-m', 'discovery',
                                         '-t', 'sendtargets',
-                                        '-p', self.configuration.san_ip,
+                                        '-p', self.configuration.san_ip + ':3260',
+                                        '-D', '-o', 'update',
                                         run_as_root=True)
             LOG.debug('_find_target: out=%s (%s)', out, _err)
         except processutils.ProcessExecutionError as ex:
