@@ -348,7 +348,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             if not self._logout_target(self.configuration.san_ip + ':' +
                                        str(self.configuration.iscsi_port),
                                        target):
-                LOG.error(_LE('Cannot logout iSCSI sessions, cannot rename volume'))
+                LOG.error('Cannot logout iSCSI sessions, cannot rename volume')
                 return False
 
         # Rename volume.
@@ -358,7 +358,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
                           run_as_root=True)
         except putils.ProcessExecutionError:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_LE('Error renaming volume'))
+                LOG.exception('Error renaming volume')
                                             
     def manage_existing(self, volume, existing_ref):
         """Manages an existing volume.
@@ -433,7 +433,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             LOG.debug('Delete volume successful')
             return True
         else:
-            LOG.error(_LE('Cannot delete volume'))
+            LOG.error('Cannot delete volume')
             return False
 
     def _find_target(self, volume_id):
@@ -452,7 +452,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
                                         run_as_root=True)
             LOG.debug('_find_target: out=%s (%s)', out, _err)
         except processutils.ProcessExecutionError as ex:
-            LOG.error(_LE("ISCSI discovery attempt failed for: %s") %
+            LOG.error("ISCSI discovery attempt failed for: %s",
                       self.configuration.san_ip)
             LOG.debug(("Error from iscsiadm -m discovery: %s") % ex.stderr)
             return False
@@ -476,7 +476,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
                                         run_as_root=True)
             LOG.debug('_login_target: out=%s (%s)', out, _err)
         except processutils.ProcessExecutionError as ex:
-            LOG.error(_LE("ISCSI login attempt failed for: %s:%s") %
+            LOG.error("ISCSI login attempt failed for: %s:%s",
                       portal, target)
             LOG.debug(("Error from iscsiadm -m node: %s") % ex.stderr)
             return False
@@ -498,8 +498,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
                                         run_as_root=True)
         except processutils.ProcessExecutionError as ex:
             LOG.debug(("Error from iscsiadm -m node: %s") % ex.stderr)
-            LOG.error(_LE("ISCSI logout attempt failed for: %s:%s") %
-                      (portal, target))
+            LOG.error("ISCSI logout attempt failed for: %s:%s", portal, target)
             return False
 
         # Find out if we have the words 'Logout to .* successful' in the message
@@ -536,8 +535,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
         target = self._find_target(volume_id)
         if not target:
-            LOG.error(_LE("ISCSI find block device failed for: %s") %
-                      volume_id)
+            LOG.error("ISCSI find block device failed for: %s", volume_id)
             return False
 
         LOG.debug('_find_iscsi_block_device: target=%s', target)
@@ -557,8 +555,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         # Find the target/iqn.
         target = self._find_target(volume['name_id'])
         if not target:
-            LOG.error(_LE("ISCSI init connection failed for: %s") %
-                      volume['name_id'])
+            LOG.error("ISCSI init connection failed for: %s", volume['name_id'])
             return False
 
         LOG.debug('initialize_connection: target=%s', target)
@@ -567,8 +564,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         if self._login_target(self.configuration.san_ip + ':' +
                                str(self.configuration.iscsi_port),
                                target):
-            LOG.error(_LE("ISCSI login failed for: %s") %
-                      volume['name_id'])
+            LOG.error("ISCSI login failed for: %s", volume['name_id'])
             return False
 
         block_dev = self._find_iscsi_block_device(volume['name_id'])
@@ -596,8 +592,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         # Find the target/iqn.
         target = self._find_target(volume['name_id'])
         if not target:
-            LOG.error(_LE("ISCSI term connection failed for: %s") %
-                      volume['name_id'])
+            LOG.error("ISCSI term connection failed for: %s", volume['name_id'])
             return False
 
         LOG.debug('terminate_connection: target=%s', target)
@@ -608,8 +603,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             if not self._logout_target(self.configuration.san_ip + ':' +
                                        str(self.configuration.iscsi_port),
                                        target):
-                LOG.error(_LE("ISCSI logout failed for: %s") %
-                          volume['name_id'])
+                LOG.error("ISCSI logout failed for: %s", volume['name_id'])
                 return False
 
         return True
