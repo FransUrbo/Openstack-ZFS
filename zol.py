@@ -226,10 +226,6 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         LOG.debug('About to run command: "%s"', *cmd)
         self._execute(*cmd, run_as_root=True)
 
-        self.create_export(None, volume)
-        time.sleep( 10 )
-        self.initialize_connection(volume)
-
     def _update_volume_stats(self):
         """Retrieve stats info from volume group."""
         LOG.debug("Updating volume stats")
@@ -645,6 +641,11 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
         return True
         
+    def ensure_export(self, context, volume):
+        """Synchronously recreates an export for a logical volume."""
+        LOG.debug('ensure_export(%s)', volume['name_id'])
+        pass
+
     def validate_connector(self, connector):
         return self.target_driver.validate_connector(connector)
 
@@ -653,7 +654,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         LOG.debug('create_export(%s)', volume['name_id'])
 
         zfs_poolname = self._build_zfs_poolname(volume['name'])
-        LOG.debug('create_export(): Trying to share "%s"', zfs_poolname)
+        LOG.debug('create_export: Trying to share "%s"', zfs_poolname)
         
         # zfs doesn't return anything valuable.
         self._execute(CONF.san_zfs_command, 'set', 'shareiscsi=on',
@@ -704,9 +705,16 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     def copy_image_to_volume(self, context, volume, image_service, image_id):
         """Fetch the image from image_service and write it to the volume."""
+        LOG.debug('copy_image_to_volume(volume=%s, service=%s, image=%s)',
+                  volume['name_id'], image_service, image_id)
+
+        #driver.copy_image_to_volume(context, volume, image_service, image_id)
+        self.create_export(None, volume)
+        time.sleep( 10 )
+        self.initialize_connection(volume)
+        
         dest = self._find_iscsi_block_device(volume['name_id'])
-        LOG.debug("copy_image_to_volume: volume_id='%s', dest='%s'",
-                  volume['name_id'], dest)
+        LOG.debug("copy_image_to_volume: dest='%s'", dest)
         image_utils.fetch_to_raw(context,
                                  image_service,
                                  image_id,
