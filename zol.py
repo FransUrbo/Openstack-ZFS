@@ -22,7 +22,7 @@
 Driver for ZFS-on-Linux-stored volumes.
 
 This is a fork from https://github.com/tparker00/Openstack-ZFS by tparker00
-with modifications to make it work well with Cinder and OpenStack Mitaka.
+with modifications to make it work well with Cinder and OpenStack Mitaka and Newton.
 
 My setup is utilizing remotly stored ZFS volumes so local access was not tested.
 """
@@ -197,7 +197,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
         zfs_poolname = self._build_zfs_poolname(snapshot['volume_name'])
         snap_path  = "%s@%s" % (zfs_poolname, snapshot['name'])
-        if self._volume_not_present(snapshot['volume_name']):
+        if not self._volume_present(snapshot['volume_name']):
             # If the snapshot isn't present, then don't attempt to delete
             LOG.debug("SNAPSHOT NOT FOUND %s",(snap_path))
             return True
@@ -377,7 +377,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         LOG.debug('manage_existing: volume=%s', volume)
         LOG.debug('manage_existing: existing_ref=%s', existing_ref)
 
-        if self._volume_not_present(volume['name']):
+        if not self._volume_present(volume['name']):
             # If the volume isn't present, then don't attempt to delete
             LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
             return True
@@ -401,18 +401,21 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         # TODO
         pass
 
-    def _volume_not_present(self, volume_name):
+    def _volume_present(self, volume_name):
         zfs_poolname = self._build_zfs_poolname(volume_name)
-        LOG.debug("_volume_not_present(%s): %s" % (volume_name, zfs_poolname))
+        LOG.debug("_volume_present(%s): %s" % (volume_name, zfs_poolname))
 
         try:
-            out, err = self._execute(CONF.san_zfs_command, 'list', '-H', 
+            (out, err) = self._execute(CONF.san_zfs_command, 'list', '-H', 
                                      zfs_poolname, run_as_root=True)
-            if out.startswith(zfs_poolname):
-                return False
+            if volume_name in zfs_poolname:
+                LOG.debug('_volume_present: CHECK: Found "%s" in "%s".', volume_name, zfs_poolname)
+                return True
+            LOG.debug('_volume_present: ERROR Did NOT find "%s" in "%s"!', volume_name, zfs_poolname)
         except Exception as e:
             # If the volume isn't present
-            return True
+            LOG.debug('_volume_present: ERROR got exception "%s".', e)
+            return False
         return False
 
     def create_volume_from_snapshot(self, volume, snapshot):
@@ -454,6 +457,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         but since I'm using a remote SAN ('san_ip'), I need to
         discover on that.
         """
+        LOG.debug('_find_target(%s)', volume_id)
         try:
             (out, _err) = utils.execute('iscsiadm', '-m', 'discovery',
                                         '-t', 'sendtargets',
@@ -476,9 +480,9 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         #LOG.debug("_find_target: portal = '%s'", portal)
         #LOG.debug("_find_target: volume = '%s'", volume)
         for entry in out.splitlines():
-            if portal in entry.split( )[0]:
+            if portal in entry:
                 #LOG.debug("_find_target: entry = '%s'", entry)
-                if volume in entry.split( )[1]:
+                if volume in entry:
                     LOG.debug("_find_target: return %s", entry.split( )[1])
                     return entry.split( )[1].rstrip('\r\n')
 
@@ -488,11 +492,18 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         """Login to a target"""
         LOG.debug('_login_target(%s, %s)', portal, target)
 
+        t = self._get_iscsi_sessions(target)
+        if t:
+            # Yes. Ignore - already logged in
+            LOG.debug('_login_target: Target "%s" already logged in', target)
+            return True
+
         try:
+            LOG.debug('_login_target: ISCSI login attempt on %s', target)
             (out, _err) = utils.execute('iscsiadm', '-m', 'node', '-l',
                                         '-p', portal, '-T', target,
                                         run_as_root=True)
-            LOG.debug('_login_target: out=%s (%s)', out, _err)
+            LOG.debug('_login_target: out="%s" (%s)', out, _err)
         except processutils.ProcessExecutionError as ex:
             LOG.error("ISCSI login attempt failed for: %s:%s",
                       portal, target)
@@ -501,9 +512,11 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
         # Find out if we have the words 'Login to .* successful' in the message
         for entry in out.splitlines():
-            if 'successful' in entry.split( )[1]:
+            if ' successful' in entry:
+                LOG.debug('_login_target: CHECK: Found "successfull" in "%s".', entry)
                 return True
 
+        LOG.debug('_login_target: No "success" string found in iscsiadm output.')
         return False
 
     def _logout_target(self, portal, target):
@@ -514,6 +527,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             (out, _err) = utils.execute('iscsiadm', '-m', 'node', '-u',
                                         '-p', portal, '-T', target,
                                         run_as_root=True)
+            LOG.debug('_logout_target: out="%s" (%s)', out, _err)
         except processutils.ProcessExecutionError as ex:
             LOG.debug(("Error from iscsiadm -m node: %s") % ex.stderr)
             LOG.error("ISCSI logout attempt failed for: %s:%s", portal, target)
@@ -521,7 +535,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
         # Find out if we have the words 'Logout to .* successful' in the message
         for entry in out.splitlines():
-            LOG.debug('_logout_target: CHECK: successful in %s', entry)
+            LOG.debug('_logout_target: CHECK: Found "successful" in %s', entry)
             if 'successful' in entry:
                 return True
 
@@ -543,10 +557,13 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         portal = self.configuration.san_ip + ':' + str(self.configuration.iscsi_port)
         LOG.debug("_get_iscsi_sessions: portal = '%s'", portal)
         for entry in out.splitlines():
+            # entry => tcp: [1] 10.0.3.253:3260,1 iqn.2012-11.com.bayour:share.virtualmachines.blade.center.bladea01 (non-flash)
+            #          0    1   2                 3                                                                  4
+            LOG.debug('_get_iscsi_sessions: entry[2]="%s".', entry.split( )[2])
             if portal in entry.split( )[2]:
                 LOG.debug("_get_iscsi_sessions: entry => '%s == %s'", target, entry.split( )[3])
                 if target == entry.split( )[3]:
-                    LOG.debug('_get_iscsi_sessions: return %s', entry.split( )[3].rstrip('\r\n'))
+                    LOG.debug('_get_iscsi_sessions: return "%s".', entry.split( )[3].rstrip('\r\n'))
                     return entry.split( )[3].rstrip('\r\n')
 
         return False
@@ -578,6 +595,17 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
             LOG.debug(("Error from find /dev/disk/by-path: %s") % ex.stderr)
             return False
 
+    def _iscsi_location(self, ip, target, lun=None, ip_secondary=None):
+        ip_secondary = ip_secondary or []
+        port = self.configuration.iscsi_port
+        portals = map(lambda x: "%s:%s" % (x, port), [ip] + ip_secondary)
+        return ("%(portals)s,%(target)s %(lun)s"
+                % ({'portals': ";".join(portals),
+                    'target': target, 'lun': lun}))
+
+    def _build_zfs_poolname(self, volume_name):
+        return '%s/%s' % (self.configuration.san_zfs_volume_base, volume_name)
+
     def initialize_connection(self, volume, connector=None):
         """Initializes the connection and returns connection info."""
         LOG.debug('initialize_connection(%s)', volume['name_id'])
@@ -591,7 +619,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         LOG.debug('initialize_connection: target=%s', target)
 
         # Login to the target.
-        if self._login_target(self.configuration.san_ip + ':' +
+        if not self._login_target(self.configuration.san_ip + ':' +
                                str(self.configuration.iscsi_port),
                                target):
             LOG.error("ISCSI login failed for: %s", volume['name_id'])
@@ -615,29 +643,28 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
     def terminate_connection(self, volume, connector, **kwargs):
         """Terminate the connection."""
         LOG.debug('terminate_connection(%s)', volume['name_id'])
-        if self._volume_not_present(volume['name']):
+        if not self._volume_present(volume['name']):
             # If the volume isn't present, then don't attempt to disconnect.
-            LOG.debug("VOLUME NOT FOUND (%s)" % (volume['name']))
+            LOG.debug("terminate_connection: VOLUME NOT FOUND (%s)" % (volume['name']))
             return True
 
         # Find the target/iqn.
         target = self._find_target(volume['name_id'])
         if not target:
-            LOG.error("ISCSI term connection failed for(1): %s", volume['name_id'])
+            LOG.error("terminate_connection: ISCSI term connection failed for(1): %s", volume['name_id'])
             return False
 
         LOG.debug('terminate_connection: target=%s', target)
 
         target = self._get_iscsi_sessions(target)
+        LOG.debug('terminate_connection: target="%s"', target)
         if target:
             # Yes - Logout the target.
             portal = self.configuration.san_ip + ':' + str(self.configuration.iscsi_port)
             LOG.debug('terminate_connection: %s : %s', portal, target)
             if not self._logout_target(portal, target):
-                LOG.error("ISCSI logout failed for: %s", volume['name_id'])
+                LOG.error("terminate_connection: ISCSI logout failed for: %s", volume['name_id'])
                 return False
-        else:
-            LOG.error("ISCSI term connection failed for(2): %s", volume['name_id'])
 
         return True
         
@@ -659,10 +686,17 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         # zfs doesn't return anything valuable.
         self._execute(CONF.san_zfs_command, 'set', 'shareiscsi=on',
                       zfs_poolname, run_as_root=True)
-        
-        #model_update['provider_location'] = _iscsi_location(
-        #    CONF.iscsi_ip_address, tid, iscsi_name, lun)
-        #return model_update
+
+        # Find the target/iqn.
+        target = self._find_target(volume['name_id'])
+        if not target:
+            LOG.error("ISCSI create export failed for: %s", volume['name_id'])
+            return False
+
+        model_update = {}
+        model_update['provider_location'] = self._iscsi_location(
+            CONF.iscsi_ip_address, target)
+        return model_update
 
     def remove_export(self, context, volume):
         """Removes an export for a logical volume."""
@@ -731,6 +765,3 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
 
     def local_path(self, volume):
         return '/dev/zvol/%s' % self._build_zfs_poolname(volume['name'])
-
-    def _build_zfs_poolname(self, volume_name):
-        return '%s/%s' % (self.configuration.san_zfs_volume_base, volume_name)
