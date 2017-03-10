@@ -37,6 +37,7 @@ from oslo_utils import importutils
 from oslo_log import log as logging
 
 from cinder import exception
+from cinder import interface
 from cinder import objects
 from cinder import utils
 from cinder.i18n import _, _LE, _LI
@@ -102,6 +103,7 @@ CONF = cfg.CONF
 CONF.register_opts(san_opts)
 
 
+@interface.volumedriver
 class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
     """Executes commands relating to ZFS-on-Linux-hosted ISCSI volumes.
 
@@ -166,6 +168,12 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
                 self.configuration.zol_max_over_subscription_ratio
 
         LOG.info("run local = %s (%s)" % (self.run_local, CONF.san_is_local))
+
+    def do_setup(self, context):
+        pass
+
+    def check_for_setup_error(self):
+        pass
 
     def set_execute(self, execute):
         LOG.debug("override local execute cmd with %s (%s)" % (
@@ -240,7 +248,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         # each driver may define these values in its own config options
         # or fetch from driver specific configuration file.
         data["volume_backend_name"] = self.backend_name
-        data["vendor_name"] = 'Open Source'
+        data["vendor_name"] = 'Turbo Fredriksson'
         data["driver_version"] = self.VERSION
         data["storage_protocol"] = self.protocol
         data["pools"] = []
@@ -628,21 +636,31 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         block_dev = self._find_iscsi_block_device(volume['name_id'])
         LOG.debug('initialize_connection: block_dev=%s', block_dev)
 
+        portal = "%s:%s" % (self.configuration.san_ip, str(self.configuration.iscsi_port))
+        properties = {
+            'target_discovered': False,
+            'target_portal': portal,
+            'target_iqn': target,
+            'target_lun': 0,
+            'volume_id': volume['id'],
+            'volume_path': block_dev,
+            'discard': False,
+        }
+        
+        LOG.debug("initialize_connection: Attach properties: %(properties)s",
+                  {'properties': properties})
+
         return {
             'driver_volume_type': self.configuration.iscsi_protocol,
-            'data': {
-                'target_discovered': True,
-                'target_portal': self.configuration.san_ip + ':' + str(self.configuration.iscsi_port),
-                'target_iqn': target,
-                'volume_id': volume['name_id'],
-                'volume_path': block_dev,
-                'discard': False,
-            }
+            'data': properties,
         }
 
     def terminate_connection(self, volume, connector, **kwargs):
         """Terminate the connection."""
         LOG.debug('terminate_connection(%s)', volume['name_id'])
+        LOG.debug('Unconfiguring export for volume "%(volume)s" - %(connector)s',
+                   {'connector': connector, 'volume': volume['name_id']})
+
         if not self._volume_present(volume['name']):
             # If the volume isn't present, then don't attempt to disconnect.
             LOG.debug("terminate_connection: VOLUME NOT FOUND (%s)" % (volume['name']))
@@ -742,7 +760,7 @@ class ZFSonLinuxISCSIDriver(san.SanISCSIDriver):
         LOG.debug('copy_image_to_volume(volume=%s, service=%s, image=%s)',
                   volume['name_id'], image_service, image_id)
 
-        #driver.copy_image_to_volume(context, volume, image_service, image_id)
+        # https://bugs.launchpad.net/cinder/+bug/1648972
         self.create_export(None, volume)
         time.sleep( 10 )
         self.initialize_connection(volume)
